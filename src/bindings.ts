@@ -908,6 +908,64 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
+ * Fails with "Already recording" while dictation owns the microphone, and
+ * dictation fails the same way while practice does — the recorder is shared.
+ */
+async startPractice() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_practice") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops recording, transcribes, measures and saves. Coaching is a separate call
+ * (`coach_practice_session`) so the numbers are on screen while the LLM thinks.
+ */
+async stopPractice() : Promise<Result<PracticeSession, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_practice") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discards the recording without transcribing or saving it.
+ */
+async cancelPractice() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_practice") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs (or re-runs) coaching for a saved session. A coaching failure is data,
+ * not an `Err`: it is stored on the session and shown beside its metrics.
+ */
+async coachPracticeSession(id: number) : Promise<Result<PracticeSession, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_practice_session", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPracticeSessions() : Promise<Result<PracticeSession[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_practice_sessions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPracticePaceRange() : Promise<PaceRange> {
+    return await TAURI_INVOKE("get_practice_pace_range");
+},
+/**
  * Checks if the Mac is a laptop by detecting battery presence
  * 
  * This uses pmset to check for battery information.
@@ -1011,6 +1069,35 @@ export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_d
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * Stored as JSON alongside history entries. Any field added later needs
+ * `#[serde(default)]`, or sessions saved before it existed stop decoding.
+ */
+export type DeliveryMetrics = { duration_seconds: number; speech_span_seconds: number; speaking_seconds: number; total_words: number; 
+/**
+ * Silence runs inside the speech span only.
+ */
+pauses: Pause[]; total_pause_seconds: number; longest_pause_seconds: number; speaking_ratio: number; words_per_minute: number; 
+/**
+ * WPM excluding pauses.
+ */
+articulation_rate: number; filler_counts: Partial<{ [key in string]: number }>; fillers_per_minute: number; mean_pitch_hz: number; pitch_range_hz: number; pitch_std_dev_hz: number; 
+/**
+ * 0 means unvoiced.
+ */
+pitch_contour: number[]; 
+/**
+ * dB relative to full scale, so values are negative.
+ */
+mean_level_db: number; dynamic_range_db: number; level_std_dev_db: number; energy_contour: number[]; 
+/**
+ * Spacing between contour samples; both contours share this grid.
+ */
+contour_interval_seconds: number; 
+/**
+ * Read this before trusting anything above it.
+ */
+quality?: SignalQuality }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1073,10 +1160,18 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
+export type PaceRange = { min_wpm: number; max_wpm: number }
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
+export type Pause = { start_seconds: number; duration_seconds: number }
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+/**
+ * Stored as JSON in `transcription_history.practice_json`. New fields need
+ * `#[serde(default)]` or older sessions stop decoding.
+ */
+export type PracticeData = { metrics: DeliveryMetrics; coaching?: string | null; coaching_error?: string | null; coaching_model?: string | null }
+export type PracticeSession = { entry: HistoryEntry; data: PracticeData }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 
@@ -1130,6 +1225,24 @@ export type ShortcutActivation =
  */
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+/**
+ * Whether the recording is good enough for the delivery numbers to mean anything.
+ * 
+ * Every other metric is computed against an *adaptive* threshold, which is what
+ * makes them robust across rooms and microphones — and also what makes them fail
+ * silently. A recording of nothing but room tone has its threshold fitted to the
+ * room tone, so it reads as continuous confident speech. The numbers stay precise
+ * while becoming entirely fictional, which is worse than refusing to answer.
+ */
+export type SignalQuality = { 
+/**
+ * 95th minus 10th percentile of frame levels. Speech typically clears 20 dB.
+ */
+signal_to_noise_db: number; speech_level_db: number; clipped_sample_ratio: number; is_reliable: boolean; 
+/**
+ * Why the recording was rejected, phrased for the user. None when reliable.
+ */
+warning: string | null }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.

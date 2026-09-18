@@ -16,7 +16,8 @@
     "postProcessing": "Post Process",
     "history": "History",
     "debug": "Debug",
-    "about": "About"
+    "about": "About",
+    "practice": "Practice"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -713,5 +714,52 @@
     "learnMore": "How to fix",
     "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
     "dismiss": "Dismiss"
+  },
+  "practice": {
+    "title": "Practice",
+    "record": "Record",
+    "stop": "Stop",
+    "cancel": "Cancel",
+    "delete": "Delete session",
+    "hint": "Rehearse a speech, pitch or update. Voix measures how you delivered it and coaches you on it.",
+    "recording": "Recording… {{elapsed}} / {{max}}",
+    "analyzing": "Transcribing and measuring…",
+    "coaching": "Coaching… the numbers below are already final.",
+    "pastSessions": "Past sessions",
+    "empty": "No practice sessions yet.",
+    "rowSummary": "{{wpm}} WPM · {{pauses}} pauses · {{fillers}} fillers",
+    "notMeasured": "Delivery not measured — unreliable recording",
+    "unreliable": "Delivery could not be measured: {{reason}}. The content coaching below still applies; re-record to get delivery numbers.",
+    "transcript": "Transcript",
+    "coachedBy": "Coached by {{model}}",
+    "noCoaching": "No coaching for this session yet.",
+    "retryCoaching": "Coach again",
+    "pace": {
+      "slow": "Below the {{min}}–{{max}} WPM target",
+      "fast": "Above the {{min}}–{{max}} WPM target",
+      "onTarget": "Inside the {{min}}–{{max}} WPM target"
+    },
+    "unit": {
+      "wpm": "{{value}} WPM",
+      "hz": "{{value}} Hz",
+      "db": "{{value}} dB"
+    },
+    "metric": {
+      "pace": "Pace",
+      "articulation": "Articulation",
+      "articulationNote": "Pace with pauses excluded",
+      "pauses": "Pauses",
+      "pausesNote": "Longest {{longest}}s · {{voiced}}% voiced",
+      "fillers": "Fillers",
+      "fillersNote": "{{rate}} per minute",
+      "pitch": "Pitch variety",
+      "pitchNote": "Std dev around {{mean}} Hz · near 0 is monotone",
+      "volume": "Volume range",
+      "volumeNote": "Loud-to-quiet spread while speaking"
+    },
+    "chart": {
+      "pitch": "Pitch",
+      "volume": "Volume"
+    }
   }
 }
