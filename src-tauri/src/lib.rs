@@ -16,6 +16,7 @@ mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod practice;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -763,6 +764,12 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            practice::start_practice,
+            practice::stop_practice,
+            practice::cancel_practice,
+            practice::coach_practice_session,
+            practice::get_practice_sessions,
+            practice::get_practice_pace_range,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

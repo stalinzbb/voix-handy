@@ -31,6 +31,8 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    // JSON-encoded `practice::PracticeData`; NULL for ordinary dictation entries.
+    M::up("ALTER TABLE transcription_history ADD COLUMN practice_json TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -194,6 +196,28 @@ impl HistoryManager {
 
     fn get_connection(&self) -> Result<Connection> {
         Ok(Connection::open(&self.db_path)?)
+    }
+
+    /// Attach practice data to an entry. Also marks it saved, so the dictation
+    /// history limit never prunes a practice session.
+    pub fn set_practice_json(&self, id: i64, practice_json: &str) -> Result<()> {
+        self.get_connection()?.execute(
+            "UPDATE transcription_history SET practice_json = ?1, saved = 1 WHERE id = ?2",
+            params![practice_json, id],
+        )?;
+        Ok(())
+    }
+
+    /// Practice sessions, newest first, as (entry, raw practice JSON).
+    pub fn get_practice_entries(&self) -> Result<Vec<(HistoryEntry, String)>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM transcription_history WHERE practice_json IS NOT NULL ORDER BY timestamp DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((Self::map_history_entry(row)?, row.get("practice_json")?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
@@ -697,6 +721,13 @@ mod tests {
             ],
         )
         .expect("insert history entry");
+    }
+
+    #[test]
+    fn migrations_apply_to_a_fresh_database() {
+        Migrations::new(MIGRATIONS.to_vec())
+            .validate()
+            .expect("migrations are valid");
     }
 
     #[test]

@@ -1174,6 +1174,16 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_inner(audio, false)
+    }
+
+    /// Same as `transcribe`, but never strips filler words. Practice sessions
+    /// count fillers, so removing them would erase the thing being measured.
+    pub fn transcribe_keeping_fillers(&self, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_inner(audio, true)
+    }
+
+    fn transcribe_inner(&self, audio: Vec<f32>, keep_fillers: bool) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1210,7 +1220,10 @@ impl TranscriptionManager {
         }
 
         // Get current settings for configuration
-        let settings = get_settings(&self.app_handle);
+        let mut settings = get_settings(&self.app_handle);
+        if keep_fillers {
+            settings.filler_word_removal_enabled = false;
+        }
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.
