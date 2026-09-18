@@ -110,6 +110,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
       <HandyTextLogo width={120} className="m-4" />
+      {import.meta.env.DEV && (
+        <span className="-mt-2 mb-3 px-2 rounded bg-yellow-500 text-black text-xs font-bold tracking-widest">
+          {t("sidebar.devBadge")}
+        </span>
+      )}
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         {availableSections.map((section) => {
           const Icon = section.icon;

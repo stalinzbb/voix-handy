@@ -17,7 +17,8 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
-    "practice": "Practice"
+    "practice": "Practice",
+    "devBadge": "DEV"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",

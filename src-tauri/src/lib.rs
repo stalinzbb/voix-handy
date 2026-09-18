@@ -255,6 +255,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         .tooltip(tray::tray_tooltip())
         .icon_as_template(true);
 
+    // Dev builds sit in the menu bar next to the installed app; label this one.
+    #[cfg(debug_assertions)]
+    {
+        tray_builder = tray_builder.title("DEV");
+    }
+
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
     #[cfg(target_os = "windows")]
@@ -949,7 +955,11 @@ pub fn run(cli_args: CliArgs) {
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Handy")
+                    .title(if cfg!(debug_assertions) {
+                        "Handy (dev)"
+                    } else {
+                        "Handy"
+                    })
                     .inner_size(680.0, 570.0)
                     .min_inner_size(680.0, 570.0)
                     .resizable(true)
