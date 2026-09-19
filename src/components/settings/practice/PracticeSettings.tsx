@@ -16,6 +16,7 @@ import { MarkdownContent } from "../../whats-new/MarkdownContent";
 import { Alert } from "../../ui/Alert";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { PracticeTrends } from "./PracticeTrends";
 
 // Keeps the final transcription under the ~24 minute limit of the Parakeet
 // models, and a forgotten recording from growing without bound.
@@ -202,6 +203,8 @@ export const PracticeSettings: React.FC = () => {
           getAudioUrl={getAudioUrl}
         />
       )}
+
+      <PracticeTrends sessions={sessions} paceRange={paceRange} />
 
       <div className="space-y-2">
         <h2 className="px-4 text-xs font-medium text-mid-gray uppercase tracking-wide">

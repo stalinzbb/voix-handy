@@ -743,7 +743,9 @@
     "unit": {
       "wpm": "{{value}} WPM",
       "hz": "{{value}} Hz",
-      "db": "{{value}} dB"
+      "db": "{{value}} dB",
+      "perMinute": "{{value}} / min",
+      "seconds": "{{value}} s"
     },
     "metric": {
       "pace": "Pace",
@@ -763,6 +765,13 @@
       "volume": "Volume"
     },
     "fillersHighlighted_one": "{{count}} filler highlighted",
-    "fillersHighlighted_other": "{{count}} fillers highlighted"
+    "fillersHighlighted_other": "{{count}} fillers highlighted",
+    "trends": {
+      "title_one": "Trend · {{count}} measured session",
+      "title_other": "Trends · {{count}} measured sessions",
+      "change": "{{change}} vs previous session",
+      "fillerRate": "Filler rate",
+      "longestPause": "Longest pause"
+    }
   }
 }
