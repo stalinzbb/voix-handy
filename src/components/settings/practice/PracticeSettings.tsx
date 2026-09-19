@@ -376,12 +376,20 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
           onLoadRequest={() => getAudioUrl(entry.file_name)}
           className="w-full"
         />
-        <details>
+        <details open={fillers > 0}>
           <summary className="text-sm cursor-pointer text-text/70">
             {t("practice.transcript")}
+            {fillers > 0 && (
+              <span className="ms-2 text-xs text-text/50">
+                {t("practice.fillersHighlighted", { count: fillers })}
+              </span>
+            )}
           </summary>
           <p className="text-sm pt-2 select-text whitespace-pre-wrap">
-            {entry.transcription_text}
+            <HighlightedTranscript
+              text={entry.transcription_text}
+              fillerWords={Object.keys(m.filler_counts)}
+            />
           </p>
         </details>
       </div>
@@ -418,6 +426,36 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
         )}
       </div>
     </div>
+  );
+};
+
+// Mirrors count_fillers in src-tauri/src/audio_toolkit/analysis.rs: a token is
+// a filler when, lowercased and with edge punctuation trimmed, it is on the list.
+// Highlighting by that same rule means the marks always add up to the count.
+const normalizeToken = (token: string) =>
+  token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
+
+const HighlightedTranscript: React.FC<{
+  text: string;
+  fillerWords: string[];
+}> = ({ text, fillerWords }) => {
+  const fillers = new Set(fillerWords);
+  // The capture group keeps the whitespace runs, so the text re-joins exactly.
+  return (
+    <>
+      {text.split(/(\s+)/).map((token, i) =>
+        fillers.has(normalizeToken(token)) ? (
+          <mark
+            key={i}
+            className="rounded px-0.5 bg-yellow-500/30 text-inherit"
+          >
+            {token}
+          </mark>
+        ) : (
+          token
+        ),
+      )}
+    </>
   );
 };
 
