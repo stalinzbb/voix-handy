@@ -285,7 +285,8 @@ pub fn analyze(
     let speaking_seconds = speaking_frames as f64 * frame_duration;
 
     let pauses = detect_pauses(&is_speech, first, last, frame_duration);
-    let total_pause_seconds: f64 = pauses.iter().map(|p| p.duration_seconds).sum();
+    // `+ 0.0`: an empty float sum is -0.0 in Rust, which renders as "-0.0s".
+    let total_pause_seconds = pauses.iter().map(|p| p.duration_seconds).sum::<f64>() + 0.0;
     let longest_pause_seconds = pauses
         .iter()
         .map(|p| p.duration_seconds)
@@ -299,14 +300,15 @@ pub fn analyze(
     let speaking_minutes = speaking_seconds / 60.0;
     let per = |count: f64, minutes: f64| if minutes > 0.0 { count / minutes } else { 0.0 };
 
-    let pitches = pitch_track(pcm, sample_rate);
+    let pitches = pitch_track(pcm, sample_rate, threshold);
     let voiced: Vec<f64> = pitches.iter().copied().filter(|&p| p > 0.0).collect();
-    let pitch_range_hz = if voiced.is_empty() {
-        0.0
-    } else {
-        voiced.iter().copied().fold(f64::MIN, f64::max)
-            - voiced.iter().copied().fold(f64::MAX, f64::min)
-    };
+    // Percentile spread, same reasoning as dynamic range: one octave-error window
+    // (a breathy onset, a consonant) should not define someone's pitch range.
+    let pitch_range_hz = percentile_spread(&voiced);
+    // Mean and deviation use the same 5th–95th band. Autocorrelation's known
+    // failure is the octave error, and a handful of windows at 2x the true pitch
+    // doubled the measured deviation of a real 110 Hz voice.
+    let voiced = trim_to_percentiles(voiced);
 
     let speaking_levels: Vec<f64> = levels_db
         .iter()
@@ -448,10 +450,22 @@ fn detect_pauses(is_speech: &[bool], first: usize, last: usize, frame_duration: 
 
 /// Autocorrelation F0 per non-overlapping window. Unvoiced windows yield 0 so the
 /// contour stays aligned to a uniform time axis.
-fn pitch_track(pcm: &[f32], sample_rate: f64) -> Vec<f64> {
+///
+/// Windows at or below the silence threshold are unvoiced by definition. Without
+/// that gate, room tone gets a pitch: it is low-passed, so neighbouring samples
+/// correlate, and the pauses between phrases "measure" as 300–500 Hz.
+fn pitch_track(pcm: &[f32], sample_rate: f64, silence_threshold_db: f64) -> Vec<f64> {
     let window_length = ((sample_rate * PITCH_WINDOW_SECONDS) as usize).max(1);
-    pcm.chunks_exact(window_length)
-        .map(|w| estimate_f0(w, sample_rate).unwrap_or(0.0))
+    frame_levels_db(pcm, window_length)
+        .into_iter()
+        .zip(pcm.chunks_exact(window_length))
+        .map(|(level, window)| {
+            if level > silence_threshold_db {
+                estimate_f0(window, sample_rate).unwrap_or(0.0)
+            } else {
+                0.0
+            }
+        })
         .collect()
 }
 
@@ -591,6 +605,16 @@ fn standard_deviation(values: &[f64]) -> f64 {
     let average = mean(values);
     let variance = values.iter().map(|v| (v - average).powi(2)).sum::<f64>() / values.len() as f64;
     variance.sqrt()
+}
+
+/// Keeps the values inside the 5th–95th percentile band.
+fn trim_to_percentiles(values: Vec<f64>) -> Vec<f64> {
+    let ordered = sorted(&values);
+    let (low, high) = (percentile(&ordered, 0.05), percentile(&ordered, 0.95));
+    values
+        .into_iter()
+        .filter(|v| (low..=high).contains(v))
+        .collect()
 }
 
 /// 5th-to-95th percentile rather than min-to-max: one cough or one clipped

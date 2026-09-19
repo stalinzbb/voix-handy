@@ -402,3 +402,31 @@ fn pitch_resampling_never_invents_intermediate_pitches() {
         );
     }
 }
+
+/// Found on real speech: room tone is low-passed, so neighbouring samples
+/// correlate and the quiet gaps between phrases "measure" as 300–500 Hz. That
+/// tripled the reported pitch spread and made every speaker read as expressive.
+/// Pitch must only be estimated where there is speech.
+#[test]
+fn room_tone_between_phrases_is_not_pitched() {
+    let mut generator = SplitMix64(11);
+    let mut room_tone = |seconds: f64| -> Vec<f32> {
+        let raw: Vec<f32> = (0..(SAMPLE_RATE * seconds) as usize + 8)
+            .map(|_| generator.next_unit_interval() as f32 * 2.0 - 1.0)
+            .collect();
+        // Moving average = crude low-pass, like a real room and microphone.
+        raw.windows(8)
+            .map(|w| 0.004 * w.iter().sum::<f32>() / 8.0)
+            .collect()
+    };
+    let mut pcm = Vec::new();
+    for _ in 0..6 {
+        pcm.extend(sine(150.0, 1.0));
+        pcm.extend(room_tone(1.0));
+    }
+    let m = run(&pcm, "", &[]);
+
+    assert!(m.quality.is_reliable, "warning: {:?}", m.quality.warning);
+    assert_close(m.mean_pitch_hz, 150.0, 3.0);
+    assert!(m.pitch_range_hz < 10.0, "range was {}", m.pitch_range_hz);
+}
