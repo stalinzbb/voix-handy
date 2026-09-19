@@ -75,7 +75,9 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
     component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
+    // Always shown: practice coaching uses this provider even when dictation
+    // post-processing is switched off.
+    enabled: () => true,
   },
   debug: {
     labelKey: "sidebar.debug",
