@@ -206,7 +206,7 @@ fn sessions(hm: &HistoryManager) -> Result<Vec<PracticeSession>, String> {
         .collect())
 }
 
-fn filler_words(app: &AppHandle) -> Vec<String> {
+pub(crate) fn filler_words(app: &AppHandle) -> Vec<String> {
     get_settings(app)
         .custom_filler_words
         .unwrap_or_else(|| DEFAULT_FILLER_WORDS.iter().map(|w| w.to_string()).collect())

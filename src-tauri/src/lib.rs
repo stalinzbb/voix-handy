@@ -579,7 +579,12 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             }
         }
         let t = Instant::now();
-        match tm.transcribe(samples.clone()) {
+        let result = if args.practice {
+            tm.transcribe_keeping_fillers(samples.clone())
+        } else {
+            tm.transcribe(samples.clone())
+        };
+        match result {
             Ok(out) => text = out,
             Err(e) => {
                 eprintln!("error: transcribe failed: {}", e);
@@ -622,6 +627,15 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             rtf,
         );
         println!("text: {}", text);
+    }
+    if args.practice {
+        let metrics = crate::audio_toolkit::analysis::analyze(
+            &samples,
+            16_000.0,
+            &text,
+            &practice::filler_words(app),
+        );
+        println!("{}", metrics.summary_text());
     }
     0
 }

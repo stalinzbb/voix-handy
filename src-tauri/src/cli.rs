@@ -34,6 +34,11 @@ pub struct CliArgs {
     #[arg(short = 'f', long, value_name = "WAV")]
     pub transcribe_file: Option<PathBuf>,
 
+    /// With --transcribe-file: run the practice pipeline instead of dictation —
+    /// keep filler words and print the measured delivery metrics.
+    #[arg(long)]
+    pub practice: bool,
+
     /// Model id to load for --transcribe-file (default: the selected model).
     #[arg(long)]
     pub model: Option<String>,
