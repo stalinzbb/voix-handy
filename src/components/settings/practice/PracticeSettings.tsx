@@ -1,12 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Mic, RotateCcw, Square, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  type LucideIcon,
+  Mic,
+  RotateCcw,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   commands,
   type DeliveryMetrics,
+  type Level,
   type PaceRange,
   type PracticeSession,
 } from "@/bindings";
@@ -232,9 +243,7 @@ export const PracticeSettings: React.FC = () => {
                     i18n.language,
                   )}
                 </p>
-                <p className="text-xs text-text/60">
-                  {rowSummary(session.data.metrics, t)}
-                </p>
+                <p className="text-xs text-text/60">{rowSummary(session, t)}</p>
               </button>
               <Button
                 variant="danger-ghost"
@@ -257,14 +266,17 @@ type Translate = ReturnType<typeof useTranslation>["t"];
 
 // A gate-rejected session has no trustworthy numbers; "0 WPM · 0 pauses" would
 // read as a measurement.
-const rowSummary = (m: DeliveryMetrics, t: Translate) =>
-  m.quality?.is_reliable
-    ? t("practice.rowSummary", {
-        wpm: Math.round(m.words_per_minute),
-        pauses: m.pauses.length,
-        fillers: totalFillers(m),
+const rowSummary = (session: PracticeSession, t: Translate) => {
+  const count = (level: Level) =>
+    session.findings.filter((f) => f.level === level).length;
+  return session.data.metrics.quality?.is_reliable
+    ? t("practice.glance", {
+        workOn: count("work_on"),
+        watch: count("watch"),
+        good: count("good"),
       })
     : t("practice.notMeasured");
+};
 
 const totalFillers = (m: DeliveryMetrics) =>
   Object.values(m.filler_counts).reduce<number>((a, b) => a + (b ?? 0), 0);
@@ -277,6 +289,12 @@ interface SessionDetailProps {
   getAudioUrl: (fileName: string) => Promise<string | null>;
 }
 
+const LEVEL_STYLE: Record<Level, { icon: LucideIcon; tone: string }> = {
+  work_on: { icon: AlertCircle, tone: "text-red-400" },
+  watch: { icon: AlertTriangle, tone: "text-yellow-500" },
+  good: { icon: CheckCircle, tone: "text-green-500" },
+};
+
 const SessionDetail: React.FC<SessionDetailProps> = ({
   session,
   paceRange,
@@ -285,117 +303,84 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   getAudioUrl,
 }) => {
   const { t } = useTranslation();
-  const { entry, data } = session;
+  const { entry, data, findings } = session;
   const m = data.metrics;
   const fillers = totalFillers(m);
+  const longPauses = m.pauses.filter((p) => p.duration_seconds >= 2).length;
 
-  let paceNote = "";
-  if (paceRange) {
-    const range = { min: paceRange.min_wpm, max: paceRange.max_wpm };
-    if (m.words_per_minute < paceRange.min_wpm)
-      paceNote = t("practice.pace.slow", range);
-    else if (m.words_per_minute > paceRange.max_wpm)
-      paceNote = t("practice.pace.fast", range);
-    else paceNote = t("practice.pace.onTarget", range);
-  }
-
-  const cards: [string, string, string][] = [
-    [
-      t("practice.metric.pace"),
-      t("practice.unit.wpm", { value: Math.round(m.words_per_minute) }),
-      paceNote,
-    ],
-    [
-      t("practice.metric.articulation"),
-      t("practice.unit.wpm", { value: Math.round(m.articulation_rate) }),
-      t("practice.metric.articulationNote"),
-    ],
-    [
-      t("practice.metric.pauses"),
-      String(m.pauses.length),
-      t("practice.metric.pausesNote", {
-        longest: m.longest_pause_seconds.toFixed(1),
-        voiced: Math.round(m.speaking_ratio * 100),
-      }),
-    ],
-    [
-      t("practice.metric.fillers"),
-      String(fillers),
-      t("practice.metric.fillersNote", {
-        rate: m.fillers_per_minute.toFixed(1),
-      }),
-    ],
-    [
-      t("practice.metric.pitch"),
-      t("practice.unit.hz", { value: Math.round(m.pitch_std_dev_hz) }),
-      t("practice.metric.pitchNote", { mean: Math.round(m.mean_pitch_hz) }),
-    ],
-    [
-      t("practice.metric.volume"),
-      t("practice.unit.db", { value: Math.round(m.dynamic_range_db) }),
-      t("practice.metric.volumeNote"),
-    ],
-  ];
+  // Everything a finding's sentence might quote, in everyday units.
+  const facts = {
+    wpm: Math.round(m.words_per_minute),
+    min: paceRange?.min_wpm ?? 0,
+    max: paceRange?.max_wpm ?? 0,
+    count: fillers,
+    rate: m.fillers_per_minute.toFixed(1),
+    longPauses,
+    longest: m.longest_pause_seconds.toFixed(1),
+  };
+  // The big line on each card: a number where a number means something to a
+  // person, a word where it would not (nobody thinks in Hz of deviation).
+  const headline: Record<string, string> = {
+    pace: t("practice.headline.pace", facts),
+    fillers: t("practice.headline.fillers", facts),
+    pauses: t("practice.headline.pauses", { count: longPauses }),
+  };
+  const count = (level: Level) =>
+    findings.filter((f) => f.level === level).length;
 
   return (
     <div className="space-y-4">
       {m.quality?.is_reliable ? (
-        <>
-          <div className="grid grid-cols-3 gap-2">
-            {cards.map(([label, value, note]) => (
-              <div
-                key={label}
-                className="bg-background border border-mid-gray/20 rounded-lg p-3"
-              >
-                <p className="text-xs text-mid-gray uppercase tracking-wide">
-                  {label}
-                </p>
-                <p className="text-xl font-semibold">{value}</p>
-                <p className="text-xs text-text/60">{note}</p>
-              </div>
-            ))}
+        <div className="space-y-2">
+          <p className="px-4 text-sm">
+            {t("practice.glance", {
+              workOn: count("work_on"),
+              watch: count("watch"),
+              good: count("good"),
+            })}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {findings.map((finding, index) => {
+              const { icon: Icon, tone } = LEVEL_STYLE[finding.level];
+              // An odd count would orphan the last card; widen the first — it is
+              // the most urgent one — instead.
+              const wide = index === 0 && findings.length % 2 === 1;
+              return (
+                <div
+                  key={finding.metric}
+                  className={`bg-background border border-mid-gray/20 rounded-lg p-3 ${wide ? "col-span-2" : ""}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-mid-gray uppercase tracking-wide">
+                      {t(`practice.metric.${finding.metric}`)}
+                    </p>
+                    <span
+                      className={`flex items-center gap-1 text-xs font-medium ${tone}`}
+                    >
+                      <Icon width={14} height={14} />
+                      {t(`practice.level.${finding.level}`)}
+                    </span>
+                  </div>
+                  <p className="text-lg font-semibold">
+                    {headline[finding.metric] ??
+                      t(`practice.word.${finding.metric}.${finding.note}`)}
+                  </p>
+                  <p className="text-sm text-text/70">
+                    {t(
+                      `practice.finding.${finding.metric}.${finding.note}`,
+                      facts,
+                    )}
+                  </p>
+                </div>
+              );
+            })}
           </div>
-          <Contour
-            label={t("practice.chart.pitch")}
-            values={m.pitch_contour}
-            metrics={m}
-            gapsAtZero
-          />
-          <Contour
-            label={t("practice.chart.volume")}
-            values={m.energy_contour}
-            metrics={m}
-          />
-        </>
+        </div>
       ) : (
         <Alert variant="warning">
           {t("practice.unreliable", { reason: m.quality?.warning ?? "" })}
         </Alert>
       )}
-
-      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
-        <AudioPlayer
-          key={entry.file_name}
-          onLoadRequest={() => getAudioUrl(entry.file_name)}
-          className="w-full"
-        />
-        <details open={fillers > 0}>
-          <summary className="text-sm cursor-pointer text-text/70">
-            {t("practice.transcript")}
-            {fillers > 0 && (
-              <span className="ms-2 text-xs text-text/50">
-                {t("practice.fillersHighlighted", { count: fillers })}
-              </span>
-            )}
-          </summary>
-          <p className="text-sm pt-2 select-text whitespace-pre-wrap">
-            <HighlightedTranscript
-              text={entry.transcription_text}
-              fillerWords={Object.keys(m.filler_counts)}
-            />
-          </p>
-        </details>
-      </div>
 
       <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
         {coaching ? (
@@ -428,6 +413,61 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
           </div>
         )}
       </div>
+
+      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
+        <AudioPlayer
+          key={entry.file_name}
+          onLoadRequest={() => getAudioUrl(entry.file_name)}
+          className="w-full"
+        />
+        <details open={fillers > 0}>
+          <summary className="text-sm cursor-pointer text-text/70">
+            {t("practice.transcript")}
+            {fillers > 0 && (
+              <span className="ms-2 text-xs text-text/50">
+                {t("practice.fillersHighlighted", { count: fillers })}
+              </span>
+            )}
+          </summary>
+          <p className="text-sm pt-2 select-text whitespace-pre-wrap">
+            <HighlightedTranscript
+              text={entry.transcription_text}
+              fillerWords={Object.keys(m.filler_counts)}
+            />
+          </p>
+        </details>
+      </div>
+
+      {m.quality?.is_reliable && (
+        <details>
+          <summary className="px-4 text-sm cursor-pointer text-text/70">
+            {t("practice.details.title")}
+          </summary>
+          <div className="space-y-2 pt-2">
+            <Contour
+              label={t("practice.chart.pitch")}
+              values={m.pitch_contour}
+              metrics={m}
+              gapsAtZero
+            />
+            <Contour
+              label={t("practice.chart.volume")}
+              values={m.energy_contour}
+              metrics={m}
+            />
+            <p className="px-4 text-xs text-text/60 select-text">
+              {t("practice.details.numbers", {
+                articulation: Math.round(m.articulation_rate),
+                voiced: Math.round(m.speaking_ratio * 100),
+                pauses: m.pauses.length,
+                pitch: Math.round(m.mean_pitch_hz),
+                pitchSd: Math.round(m.pitch_std_dev_hz),
+                range: Math.round(m.dynamic_range_db),
+              })}
+            </p>
+          </div>
+        </details>
+      )}
     </div>
   );
 };

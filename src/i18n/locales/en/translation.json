@@ -728,18 +728,12 @@
     "coaching": "Coaching… the numbers below are already final.",
     "pastSessions": "Past sessions",
     "empty": "No practice sessions yet.",
-    "rowSummary": "{{wpm}} WPM · {{pauses}} pauses · {{fillers}} fillers",
     "notMeasured": "Delivery not measured — unreliable recording",
     "unreliable": "Delivery could not be measured: {{reason}}. The content coaching below still applies; re-record to get delivery numbers.",
     "transcript": "Transcript",
     "coachedBy": "Coached by {{model}}",
     "noCoaching": "No coaching for this session yet.",
     "retryCoaching": "Coach again",
-    "pace": {
-      "slow": "Below the {{min}}–{{max}} WPM target",
-      "fast": "Above the {{min}}–{{max}} WPM target",
-      "onTarget": "Inside the {{min}}–{{max}} WPM target"
-    },
     "unit": {
       "wpm": "{{value}} WPM",
       "hz": "{{value}} Hz",
@@ -749,16 +743,10 @@
     },
     "metric": {
       "pace": "Pace",
-      "articulation": "Articulation",
-      "articulationNote": "Pace with pauses excluded",
+      "fillers": "Filler words",
       "pauses": "Pauses",
-      "pausesNote": "Longest {{longest}}s · {{voiced}}% voiced",
-      "fillers": "Fillers",
-      "fillersNote": "{{rate}} per minute",
       "pitch": "Pitch variety",
-      "pitchNote": "Std dev around {{mean}} Hz · near 0 is monotone",
-      "volume": "Volume range",
-      "volumeNote": "Loud-to-quiet spread while speaking"
+      "volume": "Volume variety"
     },
     "chart": {
       "pitch": "Pitch",
@@ -772,6 +760,63 @@
       "change": "{{change}} vs previous session",
       "fillerRate": "Filler rate",
       "longestPause": "Longest pause"
+    },
+    "level": {
+      "work_on": "Work on this",
+      "watch": "Keep an eye on",
+      "good": "Going well"
+    },
+    "glance": "{{workOn}} to work on · {{watch}} to keep an eye on · {{good}} going well",
+    "headline": {
+      "pace": "{{wpm}} words a minute",
+      "fillers_one": "{{count}} filler",
+      "fillers_other": "{{count}} fillers",
+      "pauses_one": "{{count}} long pause",
+      "pauses_other": "{{count}} long pauses"
+    },
+    "word": {
+      "pitch": {
+        "monotone": "One note",
+        "flat": "A bit flat",
+        "varied": "Lively"
+      },
+      "volume": {
+        "flat": "Same level throughout",
+        "varied": "Varied"
+      }
+    },
+    "finding": {
+      "pace": {
+        "slow": "Slow. A practised talk usually runs {{min}}–{{max}} words a minute.",
+        "bit_slow": "A little slow. Aim for {{min}}–{{max}} words a minute.",
+        "on_target": "Right in the {{min}}–{{max}} range. Nothing to change.",
+        "bit_fast": "A little fast. Aim for {{min}}–{{max}} words a minute.",
+        "fast": "Fast. Listeners need {{min}}–{{max}} words a minute to keep up."
+      },
+      "fillers": {
+        "few": "Barely noticeable ({{rate}} a minute).",
+        "some": "Starting to show ({{rate}} a minute). Try a silent beat instead.",
+        "many": "Distracting ({{rate}} a minute). Replace each one with a silent beat.",
+        "none": "None at all. Clean."
+      },
+      "pauses": {
+        "none_long": "No dead air. Your longest pause was {{longest}}s.",
+        "some_long": "Your longest pause was {{longest}}s. Fine if you meant it, dead air if you were searching.",
+        "many_long": "Several long silences, up to {{longest}}s. Know your next sentence before you stop."
+      },
+      "pitch": {
+        "monotone": "Your voice stays on one note. Lift it on the words that matter.",
+        "flat": "Your voice moves a little. Push the highs and lows further.",
+        "varied": "Your voice rises and falls naturally."
+      },
+      "volume": {
+        "flat": "Every sentence is at the same loudness. Get louder on key points, softer for contrast.",
+        "varied": "You use loud and soft to make points land."
+      }
+    },
+    "details": {
+      "title": "Timeline and raw numbers",
+      "numbers": "{{articulation}} words a minute while speaking · {{voiced}}% of the time voiced · {{pauses}} pauses of half a second or more · pitch {{pitch}} Hz ± {{pitchSd}} · volume range {{range}} dB"
     }
   }
 }

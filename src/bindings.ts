@@ -1105,6 +1105,12 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+/**
+ * One plain-language verdict. `metric` and `note` are stable keys — the UI maps
+ * them to a sentence (`practice.finding.<metric>.<note>`) and the coach is handed
+ * the same verdicts, so the cards and the coaching cannot disagree.
+ */
+export type Finding = { metric: string; level: Level; note: string }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
@@ -1123,6 +1129,10 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * How one aspect of delivery went, in three plain steps.
+ */
+export type Level = "work_on" | "watch" | "good"
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
@@ -1171,7 +1181,12 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
  * `#[serde(default)]` or older sessions stop decoding.
  */
 export type PracticeData = { metrics: DeliveryMetrics; coaching?: string | null; coaching_error?: string | null; coaching_model?: string | null }
-export type PracticeSession = { entry: HistoryEntry; data: PracticeData }
+export type PracticeSession = { entry: HistoryEntry; data: PracticeData; 
+/**
+ * Plain-language verdicts, most urgent first. Computed on read rather than
+ * stored, so retuning a threshold re-judges old sessions too.
+ */
+findings: Finding[] }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 

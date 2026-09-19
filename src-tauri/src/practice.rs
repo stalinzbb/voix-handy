@@ -9,7 +9,7 @@
 //! `practice_json` column. It is persisted *before* coaching runs, so a quit, a
 //! dead endpoint or a cancelled request never costs the recording its analysis.
 
-use crate::audio_toolkit::analysis::{analyze, DeliveryMetrics};
+use crate::audio_toolkit::analysis::{analyze, DeliveryMetrics, Finding};
 use crate::audio_toolkit::{save_wav_file, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{HistoryEntry, HistoryManager};
@@ -57,6 +57,20 @@ pub struct PracticeData {
 pub struct PracticeSession {
     pub entry: HistoryEntry,
     pub data: PracticeData,
+    /// Plain-language verdicts, most urgent first. Computed on read rather than
+    /// stored, so retuning a threshold re-judges old sessions too.
+    pub findings: Vec<Finding>,
+}
+
+impl PracticeSession {
+    fn new(entry: HistoryEntry, data: PracticeData) -> Self {
+        let findings = data.metrics.findings(PACE_RANGE_WPM);
+        Self {
+            entry,
+            data,
+            findings,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -145,7 +159,7 @@ pub async fn stop_practice(
             ..Default::default()
         };
         store(&hm, entry.id, &data)?;
-        Ok(PracticeSession { entry, data })
+        Ok(PracticeSession::new(entry, data))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -197,7 +211,7 @@ fn sessions(hm: &HistoryManager) -> Result<Vec<PracticeSession>, String> {
     Ok(rows
         .into_iter()
         .filter_map(|(entry, json)| match serde_json::from_str(&json) {
-            Ok(data) => Some(PracticeSession { entry, data }),
+            Ok(data) => Some(PracticeSession::new(entry, data)),
             Err(e) => {
                 warn!("Skipping undecodable practice session {}: {e}", entry.id);
                 None
@@ -243,10 +257,22 @@ async fn request_coaching(
         .cloned()
         .unwrap_or_default();
 
+    // The verdicts are the ones already on screen. Handing them over keeps the
+    // coach from calling a pace slow that the card beside it calls fine.
+    let verdicts: Vec<String> = session
+        .findings
+        .iter()
+        .map(|f| format!("{}: {}", f.metric, f.note))
+        .collect();
     let user_content = format!(
-        "TRANSCRIPT\n{}\n\n{}",
+        "TRANSCRIPT\n{}\n\n{}\n\nAPP VERDICTS (already shown to the speaker; do not contradict them)\n{}",
         session.entry.transcription_text.trim(),
-        session.data.metrics.summary_text()
+        session.data.metrics.summary_text(),
+        if verdicts.is_empty() {
+            "none — delivery was not measurable".to_string()
+        } else {
+            verdicts.join("\n")
+        }
     );
 
     // Reasoning stays on: unlike dictation cleanup this is not a typing hot path,
@@ -277,42 +303,39 @@ async fn request_coaching(
 fn coach_prompt() -> String {
     let (min, max) = PACE_RANGE_WPM;
     format!(
-        "You are an experienced speech and communication coach. Below is a verbatim \
-speech-to-text transcript of a practiced speech, followed by delivery metrics measured \
-from the audio itself.
+        "You are a speech coach giving feedback someone will read in under a minute, right \
+after practising. Below is a verbatim speech-to-text transcript, delivery metrics measured \
+from the audio, and the verdicts the app already showed them.
 
-The transcript may contain speech-recognition artifacts — misheard words, missing \
-punctuation, odd capitalization. Do not critique grammar-level noise; critique the \
-speech that was actually given.
+Write in plain, everyday words. No jargon: say \"your voice stays on one note\", not \"low \
+pitch standard deviation\". Short sentences. Talk to them as \"you\". The whole answer must \
+be under 200 words.
 
-Respond in Markdown with these sections:
+Use exactly these Markdown sections, in this order:
 
-1. **Core message** — state it in one sentence. If you cannot find one, say so \
-plainly; that is the most useful thing you can tell them.
-2. **What's working** — be specific, and quote short phrases.
-3. **Content** — structure (hook, thesis, flow, close), clarity, persuasiveness. \
-Name vague or unsupported claims.
-4. **Delivery** — interpret the measured numbers, citing the actual measurements.
+## Bottom line
+One sentence: what this talk was trying to say, and whether it landed. If you cannot find \
+a point, say so plainly — that is the most useful thing you can tell them.
 
-Reference points. Overall speaking rate: {min}–{max} WPM is the target for a practiced \
-talk. A value inside that range is fine — say so and move on rather than reaching for a \
-criticism. Articulation rate well above overall WPM means time is going into pauses \
-rather than into fast talking. Roughly 60–75% of the span being voiced is normal for \
-connected speech, because ordinary gaps between words fall below the silence threshold; \
-treat it as a problem only well below that. Strategic pauses land at clause boundaries \
-while dead air does not. Pitch standard deviation near zero reads as monotone. Filler \
-rates above roughly 4 per minute start to distract.
+## Do next time
+At most 3 bullets, most important first. Each bullet is one concrete action in under 20 \
+words, starting with a verb. Mix content and delivery by what matters most. Where a \
+number backs it up, put the number in brackets at the end, like (93 words a minute).
 
-Only the figures in the metrics block are measured. Anything else is a guess — \
-including the length or placement of pauses shorter than the 0.5s threshold, which are \
-not measured at all. State such conclusions as inferences in plain words (\"this \
-suggests…\"), never as findings.
-5. **Concrete improvements** — ideas, facts or examples worth adding (flag which would \
-need verification), what to cut or reorder, and one specific delivery drill.
-6. **Suggested outline** — a revised structure they could rehearse next.
+## What worked
+At most 2 bullets. Quote a short phrase of theirs if you can. Skip this section rather \
+than invent praise.
 
-Be direct and specific. Quote short phrases when critiquing them. Do not pad with \
-praise you cannot justify from the transcript."
+## Try this drill
+One drill, two sentences, for the first bullet above.
+
+Rules. The transcript may contain recognition mistakes — ignore grammar-level noise. \
+Only the figures in the metrics block are measured; anything else is your inference, so \
+say \"it sounds like\". Do not contradict the app verdicts, and do not criticise anything \
+they mark as fine. For reference: {min}–{max} words a minute is the target pace; 60–75% \
+voiced is normal; pauses at the end of a thought help, pauses mid-thought hurt; more than \
+about 4 fillers a minute distracts. If delivery metrics are unavailable, say so in one \
+line under Bottom line and coach the content only."
     )
 }
 
@@ -322,7 +345,7 @@ mod tests {
 
     #[test]
     fn coach_prompt_quotes_the_shared_pace_range() {
-        assert!(coach_prompt().contains("100–130 WPM"));
+        assert!(coach_prompt().contains("100–130 words a minute"));
     }
 
     /// Sessions saved before a field existed must keep decoding.
