@@ -10,6 +10,7 @@ mod clipboard;
 mod commands;
 mod helpers;
 mod input;
+mod jev;
 mod llm_client;
 mod managers;
 mod memory;
@@ -790,6 +791,9 @@ pub fn run(cli_args: CliArgs) {
             practice::coach_practice_session,
             practice::get_practice_sessions,
             practice::get_practice_pace_range,
+            practice::set_typesafe_api_key,
+            practice::has_typesafe_api_key,
+            practice::analyze_practice_content,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

@@ -746,7 +746,13 @@
       "fillers": "Filler words",
       "pauses": "Pauses",
       "pitch": "Pitch variety",
-      "volume": "Volume variety"
+      "volume": "Volume variety",
+      "point": "Main point",
+      "opening": "Opening",
+      "structure": "Structure",
+      "specificity": "Specifics",
+      "closing": "Ending",
+      "conviction": "Conviction"
     },
     "chart": {
       "pitch": "Pitch",
@@ -783,6 +789,35 @@
       "volume": {
         "flat": "Same level throughout",
         "varied": "Varied"
+      },
+      "point": {
+        "found": "There is one",
+        "missing": "Hard to find"
+      },
+      "opening": {
+        "low": "Slow start",
+        "mid": "General",
+        "high": "Straight in"
+      },
+      "structure": {
+        "low": "Hard to follow",
+        "mid": "Wanders",
+        "high": "Easy to follow"
+      },
+      "specificity": {
+        "low": "All general",
+        "mid": "A little detail",
+        "high": "Concrete"
+      },
+      "closing": {
+        "low": "Trails off",
+        "mid": "Just stops",
+        "high": "Lands"
+      },
+      "conviction": {
+        "low": "Hedged",
+        "mid": "Some hedging",
+        "high": "Plain-spoken"
       }
     },
     "finding": {
@@ -812,11 +847,52 @@
       "volume": {
         "flat": "Every sentence is at the same loudness. Get louder on key points, softer for contrast.",
         "varied": "You use loud and soft to make points land."
+      },
+      "point": {
+        "found": "A listener could say what you wanted from them.",
+        "missing": "A listener could not repeat your point back. Write it as one sentence before you record."
+      },
+      "opening": {
+        "low": "You started somewhere else before getting to it. Make your first sentence the point.",
+        "mid": "You named the topic but not why it matters. Open with why they should care.",
+        "high": "You got to the point straight away."
+      },
+      "structure": {
+        "low": "Thoughts started and stopped. Pick three beats and say them in order.",
+        "mid": "There is a thread, but it restarts. Signpost it: first, second, so.",
+        "high": "The ideas came in an order a listener can follow."
+      },
+      "specificity": {
+        "low": "Nothing concrete to hold on to. Add one example, number or name.",
+        "mid": "One concrete detail. A second would make it stick.",
+        "high": "Examples and numbers carry your claims."
+      },
+      "closing": {
+        "low": "It faded out on a hedge. End on a full sentence you decided on in advance.",
+        "mid": "It stopped without a conclusion. Finish by restating the point or asking for something.",
+        "high": "You ended on a clear point or ask."
+      },
+      "conviction": {
+        "low": "Most statements were softened (I guess, kind of, maybe). Say them plain.",
+        "mid": "Some hedging. Cut 'I guess' and 'kind of' where you do mean it.",
+        "high": "You said things plainly and owned them."
       }
     },
     "details": {
       "title": "Timeline and raw numbers",
       "numbers": "{{articulation}} words a minute while speaking · {{voiced}}% of the time voiced · {{pauses}} pauses of half a second or more · pitch {{pitch}} Hz ± {{pitchSd}} · volume range {{range}} dB"
+    },
+    "yourPoint": "Your point, in your words",
+    "quoted": "“{{quote}}”",
+    "content": {
+      "settingsOff": "Content analysis: off — add a TypeSafe key",
+      "settingsOn": "Content analysis: on (TypeSafe Jev)",
+      "about": "Judges whether words like “like”, “so” and “I guess” were fillers where you said them, and rates your opening, structure, specifics, ending and conviction. Sends the transcript text to TypeSafe — never the audio. The key is stored with your other provider keys.",
+      "keyPlaceholder": "TypeSafe API key",
+      "saveKey": "Save key",
+      "removeKey": "Remove key",
+      "notAnalyzed": "Content was not analysed for this session.",
+      "analyze": "Analyse content"
     }
   }
 }

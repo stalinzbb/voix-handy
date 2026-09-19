@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import {
   commands,
   type DeliveryMetrics,
+  type FillerSpan,
+  type Finding,
   type Level,
   type PaceRange,
   type PracticeSession,
@@ -27,6 +29,7 @@ import { MarkdownContent } from "../../whats-new/MarkdownContent";
 import { Alert } from "../../ui/Alert";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { Input } from "../../ui/Input";
 import { PracticeTrends } from "./PracticeTrends";
 
 // Keeps the final transcription under the ~24 minute limit of the Parakeet
@@ -52,6 +55,8 @@ export const PracticeSettings: React.FC = () => {
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [current, setCurrent] = useState<PracticeSession | null>(null);
   const [paceRange, setPaceRange] = useState<PaceRange | null>(null);
+  const [contentEnabled, setContentEnabled] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
   // Bumped to abandon an in-flight coaching call: the backend still finishes and
   // stores its answer, the page just stops waiting for it.
   const coachingRun = useRef(0);
@@ -68,6 +73,7 @@ export const PracticeSettings: React.FC = () => {
 
   useEffect(() => {
     commands.getPracticePaceRange().then(setPaceRange);
+    commands.hasTypesafeApiKey().then(setContentEnabled);
     commands.getPracticeSessions().then((result) => {
       if (result.status === "ok") setSessions(result.data);
       else toast.error(result.error);
@@ -205,12 +211,57 @@ export const PracticeSettings: React.FC = () => {
         </div>
       </div>
 
+      <details className="px-4">
+        <summary className="text-sm cursor-pointer text-text/70">
+          {t(
+            contentEnabled
+              ? "practice.content.settingsOn"
+              : "practice.content.settingsOff",
+          )}
+        </summary>
+        <div className="pt-2 space-y-2">
+          <p className="text-xs text-text/60">{t("practice.content.about")}</p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="password"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder={t("practice.content.keyPlaceholder")}
+              className="flex-1"
+            />
+            <Button
+              size="sm"
+              disabled={!keyDraft.trim() && !contentEnabled}
+              onClick={async () => {
+                await commands.setTypesafeApiKey(keyDraft);
+                setContentEnabled(keyDraft.trim() !== "");
+                setKeyDraft("");
+              }}
+            >
+              {t(
+                keyDraft.trim() || !contentEnabled
+                  ? "practice.content.saveKey"
+                  : "practice.content.removeKey",
+              )}
+            </Button>
+          </div>
+        </div>
+      </details>
+
       {current && (
         <SessionDetail
           session={current}
           paceRange={paceRange}
           coaching={phase === "coaching"}
           onRetryCoaching={() => coach(current.entry.id)}
+          contentEnabled={contentEnabled}
+          onAnalyzeContent={async () => {
+            const result = await commands.analyzePracticeContent(
+              current.entry.id,
+            );
+            if (result.status === "ok") upsert(result.data);
+            else toast.error(result.error);
+          }}
           getAudioUrl={getAudioUrl}
         />
       )}
@@ -286,6 +337,8 @@ interface SessionDetailProps {
   paceRange: PaceRange | null;
   coaching: boolean;
   onRetryCoaching: () => void;
+  contentEnabled: boolean;
+  onAnalyzeContent: () => void;
   getAudioUrl: (fileName: string) => Promise<string | null>;
 }
 
@@ -300,6 +353,8 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   paceRange,
   coaching,
   onRetryCoaching,
+  contentEnabled,
+  onAnalyzeContent,
   getAudioUrl,
 }) => {
   const { t } = useTranslation();
@@ -307,6 +362,11 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   const m = data.metrics;
   const fillers = totalFillers(m);
   const longPauses = m.pauses.filter((p) => p.duration_seconds >= 2).length;
+  // Must match FILLER_PROBABILITY in src-tauri/src/jev.rs: these are the
+  // occurrences already added to the filler count.
+  const countedSpans = (data.content?.filler_spans ?? []).filter(
+    (span) => span.probability >= 0.7,
+  );
 
   // Everything a finding's sentence might quote, in everyday units.
   const facts = {
@@ -327,10 +387,21 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   };
   const count = (level: Level) =>
     findings.filter((f) => f.level === level).length;
+  const attention = findings.filter((f) => f.level !== "good");
+  const fine = findings.filter((f) => f.level === "good");
+  const headlineFor = (f: Finding) =>
+    headline[f.metric] ?? t(`practice.word.${f.metric}.${f.note}`);
+  const sentenceFor = (f: Finding) =>
+    t(`practice.finding.${f.metric}.${f.note}`, facts);
 
   return (
     <div className="space-y-4">
-      {m.quality?.is_reliable ? (
+      {!m.quality?.is_reliable && (
+        <Alert variant="warning">
+          {t("practice.unreliable", { reason: m.quality?.warning ?? "" })}
+        </Alert>
+      )}
+      {findings.length > 0 && (
         <div className="space-y-2">
           <p className="px-4 text-sm">
             {t("practice.glance", {
@@ -339,12 +410,13 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
               good: count("good"),
             })}
           </p>
+          {/* Up to eleven verdicts: only the ones needing attention get a card. */}
           <div className="grid grid-cols-2 gap-2">
-            {findings.map((finding, index) => {
+            {attention.map((finding, index) => {
               const { icon: Icon, tone } = LEVEL_STYLE[finding.level];
               // An odd count would orphan the last card; widen the first — it is
               // the most urgent one — instead.
-              const wide = index === 0 && findings.length % 2 === 1;
+              const wide = index === 0 && attention.length % 2 === 1;
               return (
                 <div
                   key={finding.metric}
@@ -362,24 +434,59 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                     </span>
                   </div>
                   <p className="text-lg font-semibold">
-                    {headline[finding.metric] ??
-                      t(`practice.word.${finding.metric}.${finding.note}`)}
+                    {headlineFor(finding)}
                   </p>
-                  <p className="text-sm text-text/70">
-                    {t(
-                      `practice.finding.${finding.metric}.${finding.note}`,
-                      facts,
-                    )}
-                  </p>
+                  <p className="text-sm text-text/70">{sentenceFor(finding)}</p>
                 </div>
               );
             })}
           </div>
+          {fine.length > 0 && (
+            <div className="bg-background border border-mid-gray/20 rounded-lg p-3">
+              <p
+                className={`flex items-center gap-1 text-xs font-medium pb-1 ${LEVEL_STYLE.good.tone}`}
+              >
+                <CheckCircle width={14} height={14} />
+                {t("practice.level.good")}
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {fine.map((finding) => (
+                  <p
+                    key={finding.metric}
+                    className="text-sm"
+                    title={sentenceFor(finding)}
+                  >
+                    <span className="text-text/60">
+                      {t(`practice.metric.${finding.metric}`)}
+                    </span>{" "}
+                    {headlineFor(finding)}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
-        <Alert variant="warning">
-          {t("practice.unreliable", { reason: m.quality?.warning ?? "" })}
-        </Alert>
+      )}
+
+      {session.main_point_quote && (
+        <div className="px-4">
+          <p className="text-xs text-mid-gray uppercase tracking-wide">
+            {t("practice.yourPoint")}
+          </p>
+          <p className="text-sm italic select-text">
+            {t("practice.quoted", { quote: session.main_point_quote })}
+          </p>
+        </div>
+      )}
+      {!data.content && contentEnabled && (
+        <div className="px-4 flex items-center gap-3">
+          <p className="text-sm text-text/70 flex-1">
+            {t("practice.content.notAnalyzed")}
+          </p>
+          <Button variant="secondary" size="sm" onClick={onAnalyzeContent}>
+            {t("practice.content.analyze")}
+          </Button>
+        </div>
       )}
 
       <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
@@ -432,7 +539,10 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
           <p className="text-sm pt-2 select-text whitespace-pre-wrap">
             <HighlightedTranscript
               text={entry.transcription_text}
-              fillerWords={Object.keys(m.filler_counts)}
+              listWords={Object.keys(m.filler_counts).filter(
+                (word) => !countedSpans.some((span) => span.phrase === word),
+              )}
+              spans={countedSpans}
             />
           </p>
         </details>
@@ -480,24 +590,35 @@ const normalizeToken = (token: string) =>
 
 const HighlightedTranscript: React.FC<{
   text: string;
-  fillerWords: string[];
-}> = ({ text, fillerWords }) => {
-  const fillers = new Set(fillerWords);
-  // The capture group keeps the whitespace runs, so the text re-joins exactly.
+  /** Always fillers ("um"): every occurrence is marked. */
+  listWords: string[];
+  /** Sometimes fillers ("like", "so"): only these word positions are marked. */
+  spans: FillerSpan[];
+}> = ({ text, listWords, spans }) => {
+  const always = new Set(listWords);
+  const judged = new Set<number>();
+  for (const span of spans)
+    for (let k = span.first_token; k <= span.last_token; k++) judged.add(k);
+  // Trimmed, then split with the whitespace kept: word k sits at array index 2k,
+  // the same numbering as split_whitespace() in src-tauri/src/jev.rs.
   return (
     <>
-      {text.split(/(\s+)/).map((token, i) =>
-        fillers.has(normalizeToken(token)) ? (
-          <mark
-            key={i}
-            className="rounded px-0.5 bg-yellow-500/30 text-inherit"
-          >
-            {token}
-          </mark>
-        ) : (
-          token
-        ),
-      )}
+      {text
+        .trim()
+        .split(/(\s+)/)
+        .map((token, i) =>
+          (i % 2 === 0 && judged.has(i / 2)) ||
+          always.has(normalizeToken(token)) ? (
+            <mark
+              key={i}
+              className="rounded px-0.5 bg-yellow-500/30 text-inherit"
+            >
+              {token}
+            </mark>
+          ) : (
+            token
+          ),
+        )}
     </>
   );
 };

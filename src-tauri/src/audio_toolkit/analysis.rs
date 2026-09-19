@@ -80,6 +80,7 @@ pub struct Finding {
 // Verdict thresholds. Judgement calls, so they live here with the other knobs.
 const FILLERS_PER_MINUTE_WATCH: f64 = 2.0;
 const FILLERS_PER_MINUTE_WORK_ON: f64 = 4.0;
+const MIN_FILLERS_FOR_WORK_ON: u32 = 4;
 /// Pitch deviation as a fraction of mean pitch, so a low and a high voice are
 /// judged alike. ~6% is about one semitone (monotone), ~12% about two.
 const PITCH_VARIATION_MONOTONE: f64 = 0.07;
@@ -199,9 +200,14 @@ impl DeliveryMetrics {
             (Level::Good, "on_target")
         };
 
-        let fillers = if self.fillers_per_minute > FILLERS_PER_MINUTE_WORK_ON {
+        // A rate alone overreacts on short takes: two fillers in thirty seconds is
+        // 4 a minute, and nobody would call that talk distracting.
+        let count = self.total_fillers();
+        let fillers = if self.fillers_per_minute > FILLERS_PER_MINUTE_WORK_ON
+            && count >= MIN_FILLERS_FOR_WORK_ON
+        {
             (Level::WorkOn, "many")
-        } else if self.fillers_per_minute > FILLERS_PER_MINUTE_WATCH {
+        } else if self.fillers_per_minute > FILLERS_PER_MINUTE_WATCH && count >= 2 {
             (Level::Watch, "some")
         } else if self.total_fillers() > 0 {
             (Level::Good, "few")

@@ -452,6 +452,7 @@ fn findings_put_the_most_urgent_first_and_judge_pitch_relative_to_the_voice() {
     let m = DeliveryMetrics {
         words_per_minute: 92.0,
         fillers_per_minute: 6.0,
+        filler_counts: counts(&[("um", 6)]),
         mean_pitch_hz: 220.0,
         pitch_std_dev_hz: 14.0, // 6% of 220 Hz: monotone for this voice
         dynamic_range_db: 20.0,
@@ -481,4 +482,20 @@ fn findings_put_the_most_urgent_first_and_judge_pitch_relative_to_the_voice() {
 fn unreliable_recordings_get_no_findings() {
     let m = run(&noise_at(30.0, 7, 0.05), "some words", &[]);
     assert!(m.findings((100, 130)).is_empty());
+}
+
+/// Two fillers in a thirty-second take is a high rate and a small problem.
+#[test]
+fn a_high_filler_rate_on_a_short_take_is_not_called_distracting() {
+    let m = DeliveryMetrics {
+        fillers_per_minute: 4.1,
+        filler_counts: counts(&[("like", 1), ("i guess", 1)]),
+        quality: SignalQuality {
+            is_reliable: true,
+            warning: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert_eq!(finding(&m, "fillers"), (Level::Watch, "some".into()));
 }

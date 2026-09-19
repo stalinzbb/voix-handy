@@ -11,6 +11,7 @@
 
 use crate::audio_toolkit::analysis::{analyze, DeliveryMetrics, Finding};
 use crate::audio_toolkit::{save_wav_file, VadPolicy};
+use crate::jev::{self, ContentJudgment};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::transcription::TranscriptionManager;
@@ -51,6 +52,9 @@ pub struct PracticeData {
     pub coaching_error: Option<String>,
     #[serde(default)]
     pub coaching_model: Option<String>,
+    /// Jev's content judgments. None when no TypeSafe key was set, or it failed.
+    #[serde(default)]
+    pub content: Option<ContentJudgment>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -60,15 +64,28 @@ pub struct PracticeSession {
     /// Plain-language verdicts, most urgent first. Computed on read rather than
     /// stored, so retuning a threshold re-judges old sessions too.
     pub findings: Vec<Finding>,
+    /// The speaker's own clause that states their point — only when Jev is
+    /// confident which one it is. A shaky quote is worse than none.
+    pub main_point_quote: Option<String>,
 }
 
 impl PracticeSession {
     fn new(entry: HistoryEntry, data: PracticeData) -> Self {
-        let findings = data.metrics.findings(PACE_RANGE_WPM);
+        let mut findings = data.metrics.findings(PACE_RANGE_WPM);
+        if let Some(content) = &data.content {
+            findings.extend(content.findings());
+            findings.sort_by_key(|f| f.level); // stable: delivery before content
+        }
+        let main_point_quote = data
+            .content
+            .as_ref()
+            .and_then(|c| c.confident_main_point())
+            .map(str::to_string);
         Self {
             entry,
             data,
             findings,
+            main_point_quote,
         }
     }
 }
@@ -132,7 +149,9 @@ pub async fn stop_practice(
     let tm = transcription_manager.inner().clone();
     let hm = history_manager.inner().clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let blocking_app = app.clone();
+    let session = tauri::async_runtime::spawn_blocking(move || {
+        let app = blocking_app;
         let samples = rm
             .stop_recording(BINDING_ID, rm.cancel_generation())
             .ok_or("No practice recording is in progress")?;
@@ -162,7 +181,92 @@ pub async fn stop_practice(
         Ok(PracticeSession::new(entry, data))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+
+    // Already saved above, so a TypeSafe outage costs the content cards and
+    // nothing else.
+    Ok(with_content(&app, &history_manager, session).await)
+}
+
+/// Adds Jev's content judgments to a session that has none yet. Returns the
+/// session unchanged when no key is set or the call fails.
+async fn with_content(
+    app: &AppHandle,
+    hm: &HistoryManager,
+    mut session: PracticeSession,
+) -> PracticeSession {
+    let Some(key) = typesafe_api_key(app) else {
+        return session;
+    };
+    if session.data.content.is_some() {
+        return session; // its fillers are already in the counts; never add them twice
+    }
+    match jev::judge(&session.entry.transcription_text, &filler_words(app), &key).await {
+        Ok(content) => {
+            let metrics = &mut session.data.metrics;
+            for span in content.counted_fillers() {
+                *metrics
+                    .filler_counts
+                    .entry(span.phrase.clone())
+                    .or_insert(0) += 1;
+            }
+            let minutes = metrics.speech_span_seconds / 60.0;
+            if minutes > 0.0 {
+                metrics.fillers_per_minute = metrics.total_fillers() as f64 / minutes;
+            }
+            session.data.content = Some(content);
+            if let Err(e) = store(hm, session.entry.id, &session.data) {
+                warn!("Failed to save content analysis: {e}");
+            }
+            PracticeSession::new(session.entry, session.data)
+        }
+        Err(e) => {
+            warn!("Content analysis failed: {e}");
+            session
+        }
+    }
+}
+
+const TYPESAFE_KEY_ID: &str = "typesafe";
+
+fn typesafe_api_key(app: &AppHandle) -> Option<String> {
+    get_settings(app)
+        .post_process_api_keys
+        .get(TYPESAFE_KEY_ID)
+        .filter(|k| !k.trim().is_empty())
+        .cloned()
+}
+
+/// Stored beside the other provider keys. An empty key switches content analysis off.
+#[tauri::command]
+#[specta::specta]
+pub fn set_typesafe_api_key(app: AppHandle, api_key: String) {
+    let mut settings = get_settings(&app);
+    settings
+        .post_process_api_keys
+        .insert(TYPESAFE_KEY_ID.to_string(), api_key.trim().to_string());
+    crate::settings::write_settings(&app, settings);
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn has_typesafe_api_key(app: AppHandle) -> bool {
+    typesafe_api_key(&app).is_some()
+}
+
+/// Runs content analysis on a session recorded before a key was set.
+#[tauri::command]
+#[specta::specta]
+pub async fn analyze_practice_content(
+    app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+) -> Result<PracticeSession, String> {
+    let session = sessions(&history_manager)?
+        .into_iter()
+        .find(|s| s.entry.id == id)
+        .ok_or("Practice session not found")?;
+    Ok(with_content(&app, &history_manager, session).await)
 }
 
 /// Runs (or re-runs) coaching for a saved session. A coaching failure is data,

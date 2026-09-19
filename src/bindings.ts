@@ -966,6 +966,26 @@ async getPracticePaceRange() : Promise<PaceRange> {
     return await TAURI_INVOKE("get_practice_pace_range");
 },
 /**
+ * Stored beside the other provider keys. An empty key switches content analysis off.
+ */
+async setTypesafeApiKey(apiKey: string) : Promise<void> {
+    await TAURI_INVOKE("set_typesafe_api_key", { apiKey });
+},
+async hasTypesafeApiKey() : Promise<boolean> {
+    return await TAURI_INVOKE("has_typesafe_api_key");
+},
+/**
+ * Runs content analysis on a session recorded before a key was set.
+ */
+async analyzePracticeContent(id: number) : Promise<Result<PracticeSession, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("analyze_practice_content", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Checks if the Mac is a laptop by detecting battery presence
  * 
  * This uses pmset to check for battery information.
@@ -1068,6 +1088,15 @@ export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+/**
+ * Raw answers, stored as-is. Verdicts are derived on read (`findings`), so a
+ * threshold change re-judges old sessions.
+ */
+export type ContentJudgment = { filler_spans?: FillerSpan[]; scores?: Partial<{ [key in string]: JevScore }>; has_main_point?: number; 
+/**
+ * The speaker's own clause, copied from the transcript.
+ */
+main_point?: string | null; main_point_confidence?: number }
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
  * Stored as JSON alongside history entries. Any field added later needs
@@ -1106,6 +1135,11 @@ export type EngineType =
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
 /**
+ * An ambiguous word Jev was asked about. Token indices are positions in
+ * `transcript.split_whitespace()`, which the UI reproduces to highlight them.
+ */
+export type FillerSpan = { first_token: number; last_token: number; phrase: string; probability: number }
+/**
  * One plain-language verdict. `metric` and `note` are stable keys — the UI maps
  * them to a sentence (`practice.finding.<metric>.<note>`) and the coach is handed
  * the same verdicts, so the cards and the coaching cannot disagree.
@@ -1122,6 +1156,7 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+export type JevScore = { score: number; confidence: number }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1180,13 +1215,22 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
  * Stored as JSON in `transcription_history.practice_json`. New fields need
  * `#[serde(default)]` or older sessions stop decoding.
  */
-export type PracticeData = { metrics: DeliveryMetrics; coaching?: string | null; coaching_error?: string | null; coaching_model?: string | null }
+export type PracticeData = { metrics: DeliveryMetrics; coaching?: string | null; coaching_error?: string | null; coaching_model?: string | null; 
+/**
+ * Jev's content judgments. None when no TypeSafe key was set, or it failed.
+ */
+content?: ContentJudgment | null }
 export type PracticeSession = { entry: HistoryEntry; data: PracticeData; 
 /**
  * Plain-language verdicts, most urgent first. Computed on read rather than
  * stored, so retuning a threshold re-judges old sessions too.
  */
-findings: Finding[] }
+findings: Finding[]; 
+/**
+ * The speaker's own clause that states their point — only when Jev is
+ * confident which one it is. A shaky quote is worse than none.
+ */
+main_point_quote: string | null }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 
