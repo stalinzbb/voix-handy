@@ -430,3 +430,55 @@ fn room_tone_between_phrases_is_not_pitched() {
     assert_close(m.mean_pitch_hz, 150.0, 3.0);
     assert!(m.pitch_range_hz < 10.0, "range was {}", m.pitch_range_hz);
 }
+
+// --- Findings ---
+
+fn finding(m: &DeliveryMetrics, metric: &str) -> (Level, String) {
+    let f = m
+        .findings((100, 130))
+        .into_iter()
+        .find(|f| f.metric == metric)
+        .unwrap();
+    (f.level, f.note)
+}
+
+#[test]
+fn findings_put_the_most_urgent_first_and_judge_pitch_relative_to_the_voice() {
+    let reliable = SignalQuality {
+        is_reliable: true,
+        warning: None,
+        ..Default::default()
+    };
+    let m = DeliveryMetrics {
+        words_per_minute: 92.0,
+        fillers_per_minute: 6.0,
+        mean_pitch_hz: 220.0,
+        pitch_std_dev_hz: 14.0, // 6% of 220 Hz: monotone for this voice
+        dynamic_range_db: 20.0,
+        quality: reliable.clone(),
+        ..Default::default()
+    };
+
+    assert_eq!(finding(&m, "pace"), (Level::Watch, "bit_slow".into()));
+    assert_eq!(finding(&m, "fillers"), (Level::WorkOn, "many".into()));
+    assert_eq!(finding(&m, "pitch"), (Level::WorkOn, "monotone".into()));
+    assert_eq!(finding(&m, "pauses"), (Level::Good, "none_long".into()));
+    let levels: Vec<Level> = m.findings((100, 130)).iter().map(|f| f.level).collect();
+    assert!(
+        levels.windows(2).all(|w| w[0] <= w[1]),
+        "not sorted: {levels:?}"
+    );
+
+    // The same 14 Hz of deviation is healthy variety on a 100 Hz voice.
+    let low_voice = DeliveryMetrics {
+        mean_pitch_hz: 100.0,
+        ..m
+    };
+    assert_eq!(finding(&low_voice, "pitch"), (Level::Good, "varied".into()));
+}
+
+#[test]
+fn unreliable_recordings_get_no_findings() {
+    let m = run(&noise_at(30.0, 7, 0.05), "some words", &[]);
+    assert!(m.findings((100, 130)).is_empty());
+}

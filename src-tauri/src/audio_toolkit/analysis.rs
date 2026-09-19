@@ -58,6 +58,37 @@ const MIN_SPEECH_LEVEL_DB: f64 = -45.0;
 /// and every level-derived number is compressed.
 const MAX_CLIPPED_SAMPLE_RATIO: f64 = 0.005;
 
+/// How one aspect of delivery went, in three plain steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Level {
+    WorkOn,
+    Watch,
+    Good,
+}
+
+/// One plain-language verdict. `metric` and `note` are stable keys — the UI maps
+/// them to a sentence (`practice.finding.<metric>.<note>`) and the coach is handed
+/// the same verdicts, so the cards and the coaching cannot disagree.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+pub struct Finding {
+    pub metric: String,
+    pub level: Level,
+    pub note: String,
+}
+
+// Verdict thresholds. Judgement calls, so they live here with the other knobs.
+const FILLERS_PER_MINUTE_WATCH: f64 = 2.0;
+const FILLERS_PER_MINUTE_WORK_ON: f64 = 4.0;
+/// Pitch deviation as a fraction of mean pitch, so a low and a high voice are
+/// judged alike. ~6% is about one semitone (monotone), ~12% about two.
+const PITCH_VARIATION_MONOTONE: f64 = 0.07;
+const PITCH_VARIATION_FLAT: f64 = 0.12;
+const FLAT_DYNAMIC_RANGE_DB: f64 = 8.0;
+/// Below this share of the target pace, "a bit slow" becomes "slow".
+const VERY_SLOW_FRACTION: f64 = 0.8;
+const VERY_FAST_FRACTION: f64 = 1.2;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct Pause {
     pub start_seconds: f64,
@@ -146,6 +177,79 @@ impl DeliveryMetrics {
             .iter()
             .filter(|p| p.duration_seconds >= LONG_PAUSE_SECONDS)
             .collect()
+    }
+
+    /// Plain-language verdicts, most urgent first. Empty when the recording was
+    /// not measurable — there is nothing honest to say about delivery then.
+    pub fn findings(&self, pace_range_wpm: (u32, u32)) -> Vec<Finding> {
+        if !self.quality.is_reliable {
+            return Vec::new();
+        }
+        let (min, max) = (pace_range_wpm.0 as f64, pace_range_wpm.1 as f64);
+        let wpm = self.words_per_minute;
+        let pace = if wpm < min * VERY_SLOW_FRACTION {
+            (Level::WorkOn, "slow")
+        } else if wpm < min {
+            (Level::Watch, "bit_slow")
+        } else if wpm > max * VERY_FAST_FRACTION {
+            (Level::WorkOn, "fast")
+        } else if wpm > max {
+            (Level::Watch, "bit_fast")
+        } else {
+            (Level::Good, "on_target")
+        };
+
+        let fillers = if self.fillers_per_minute > FILLERS_PER_MINUTE_WORK_ON {
+            (Level::WorkOn, "many")
+        } else if self.fillers_per_minute > FILLERS_PER_MINUTE_WATCH {
+            (Level::Watch, "some")
+        } else if self.total_fillers() > 0 {
+            (Level::Good, "few")
+        } else {
+            (Level::Good, "none")
+        };
+
+        let pauses = match self.long_pauses().len() {
+            0 => (Level::Good, "none_long"),
+            1 | 2 => (Level::Watch, "some_long"),
+            _ => (Level::WorkOn, "many_long"),
+        };
+
+        let variation = if self.mean_pitch_hz > 0.0 {
+            self.pitch_std_dev_hz / self.mean_pitch_hz
+        } else {
+            0.0
+        };
+        let pitch = if variation < PITCH_VARIATION_MONOTONE {
+            (Level::WorkOn, "monotone")
+        } else if variation < PITCH_VARIATION_FLAT {
+            (Level::Watch, "flat")
+        } else {
+            (Level::Good, "varied")
+        };
+
+        let volume = if self.dynamic_range_db < FLAT_DYNAMIC_RANGE_DB {
+            (Level::Watch, "flat")
+        } else {
+            (Level::Good, "varied")
+        };
+
+        let mut findings: Vec<Finding> = [
+            ("pace", pace),
+            ("fillers", fillers),
+            ("pauses", pauses),
+            ("pitch", pitch),
+            ("volume", volume),
+        ]
+        .into_iter()
+        .map(|(metric, (level, note))| Finding {
+            metric: metric.to_string(),
+            level,
+            note: note.to_string(),
+        })
+        .collect();
+        findings.sort_by_key(|f| f.level); // stable: ties keep the order above
+        findings
     }
 
     /// Compact rendering handed to the coaching LLM alongside the transcript.
@@ -302,13 +406,14 @@ pub fn analyze(
 
     let pitches = pitch_track(pcm, sample_rate, threshold);
     let voiced: Vec<f64> = pitches.iter().copied().filter(|&p| p > 0.0).collect();
-    // Percentile spread, same reasoning as dynamic range: one octave-error window
-    // (a breathy onset, a consonant) should not define someone's pitch range.
+    // Autocorrelation's characteristic failure is the octave error: a window read
+    // at half or double the true pitch. On a real microphone those are common
+    // enough to triple the measured spread. A speaker's genuine range sits well
+    // inside one octave around their median, so keep that band and drop the rest.
+    let voiced = within_octave_of_median(voiced);
+    // Percentile spread, same reasoning as dynamic range: one stray window should
+    // not define someone's pitch range.
     let pitch_range_hz = percentile_spread(&voiced);
-    // Mean and deviation use the same 5th–95th band. Autocorrelation's known
-    // failure is the octave error, and a handful of windows at 2x the true pitch
-    // doubled the measured deviation of a real 110 Hz voice.
-    let voiced = trim_to_percentiles(voiced);
 
     let speaking_levels: Vec<f64> = levels_db
         .iter()
@@ -607,13 +712,13 @@ fn standard_deviation(values: &[f64]) -> f64 {
     variance.sqrt()
 }
 
-/// Keeps the values inside the 5th–95th percentile band.
-fn trim_to_percentiles(values: Vec<f64>) -> Vec<f64> {
-    let ordered = sorted(&values);
-    let (low, high) = (percentile(&ordered, 0.05), percentile(&ordered, 0.95));
+/// Keeps values between 0.6x and 1.7x the median: wide enough for an expressive
+/// voice (about ±9 semitones), narrow enough to exclude 0.5x and 2x octave errors.
+fn within_octave_of_median(values: Vec<f64>) -> Vec<f64> {
+    let median = percentile(&sorted(&values), 0.5);
     values
         .into_iter()
-        .filter(|v| (low..=high).contains(v))
+        .filter(|v| (median * 0.6..=median * 1.7).contains(v))
         .collect()
 }
 
